@@ -1,0 +1,161 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(DBI)
+library(RSQLite)
+library(ggplot2)
+db = dbConnect(SQLite(), "lahman2013.sqlite")
+dbListTables(db)
+lapply(dbListTables(db), function(tbl) dbListFields(db, tbl))
+options("scipen" = 10)
+options()$scipen
+```
+
+1.
+```{r}
+P = dbGetQuery(db, "SELECT MIN(yearID), MAX(yearID) FROM Appearances")
+P
+D = dbGetQuery(db, "SELECT DISTINCT yearID FROM Appearances")
+nrow(D)
+```
+2.
+```{r}
+Playernum = dbGetQuery(db, "SELECT COUNT(DISTINCT playerID) FROM Master")
+tail(Playernum)  ##numbers of players
+M2 = dbGetQuery(db, "SELECT COUNT(DISTINCT playerID) FROM Managers")
+M2  ##numbers if manager
+```
+3
+```{r}
+M1 = dbGetQuery(db, "SELECT COUNT(DISTINCT Master.playerID) FROM Master
+                       INNER JOIN Managers on Master.playerID = Managers.playerID")
+M1
+plymanager = dbGetQuery(db, "SELECT COUNT(DISTINCT playerID) FROM Managers WHERE plyrMgr = 'Y'")
+plymanager
+```
+
+4.
+```{r}
+app = dbGetQuery(db, "SELECT COUNT (DISTINCT playerID), yearID FROM Appearances
+                 WHERE yearID BETWEEN 2000 AND 2013
+                 GROUP BY yearID")  ##number of players from 2000 to 2013
+tail(app)
+Teamember = dbGetQuery(db, "SELECT COUNT(playerID), teamID FROM Appearances
+                       GROUP BY teamID")
+tail(Teamember)
+```
+
+5
+```{r}
+Win2010 = dbGetQuery(db, "SELECT name, yearID, WSWin, lgID AS League, divID AS division  FROM Teams
+                 WHERE yearID = 2010 AND WSWin IS 'Y'")
+nrow(Win2010)
+tail(Win2010)
+```
+6
+```{r}
+Lost = dbGetQuery(db, "SELECT name, yearID, WSWin, lgID AS League, divID AS division FROM Teams
+                WHERE WSWin IS 'N'")
+nrow(Lost)
+tail(Lost)
+```
+
+7
+```{r}
+winners = dbGetQuery(db, "SELECT name, yearID, WSWin, lgID AS League, divID AS division FROM Teams
+                WHERE WSWin IS 'Y'")
+tail(winners)
+```
+8
+```{r}
+winandlost = dbGetQuery(db, "SELECT SeriesPost.yearID, T1.teamID, T1.name, T1.lgID AS League, T1.divID AS division,
+                    T2.teamID, T2.name, T2.lgID AS League, T2.divID AS division, losses as 'Lost Team Won'
+                    FROM SeriesPost
+                    INNER JOIN Teams AS T1
+                    INNER JOIN Teams AS T2
+                    on SeriesPost.teamIDwinner = T1.teamID AND SeriesPost.teamIDloser = T2.teamID AND                                   SeriesPost.yearID = T1.yearID AND SeriesPost.yearID = T2.yearID
+                    WHERE round = 'WS' 
+                    ORDER BY T1.yearID DESC
+                    LIMIT 3")
+
+
+tail(winandlost)
+```
+9
+```{r}
+WinandWS = dbGetQuery(db, "SELECT yearID, name, W as Wins, WSWin as 'WinsOrNot' FROM Teams ORDER BY yearID ")
+WinandWS = na.omit(WinandWS)
+summary(glm(data = WinandWS, as.factor(WinsOrNot) ~ Wins,family = "binomial"))
+```
+10
+```{r}
+Salary = dbGetQuery(db,"SELECT yearID, salary, Master.* FROM Salaries INNER JOIN Master
+                    on Salaries.playerID = Master.playerID
+                    ORDER BY salary DESC
+                    LIMIT 10")
+Salary
+```
+11
+```{r}
+salary2010 = dbGetQuery(db,"SELECT teamID, SUM(salary) FROM Salaries
+                        WHERE yearID = 2010
+                        GROUP BY teamID")
+tail(salary2010)
+salaryall = dbGetQuery(db,"SELECT teamID, SUM(salary) AS sumsalary, yearID FROM Salaries
+                        GROUP BY teamID, yearID")
+tail(salaryall)
+ggplot(data = salaryall, aes(x = as.factor(yearID), y = sumsalary, group = teamID)) + geom_line(aes(col = teamID)) + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + labs(x = "Years", y = "Salary")
+```
+
+14.
+```{r}
+HRnum = dbGetQuery(db, "SELECT playerID, yearID, MAX(HR) AS HR FROM Batting GROUP BY yearID  ORDER BY HR DESC")
+head(HRnum)
+```
+
+15
+```{r}
+HRnum1 = dbGetQuery(db, "SELECT playerID, yearID, SUM(HR) AS HR FROM Batting GROUP BY yearID")
+plot(HRnum1$yearID, HRnum1$HR)
+```
+
+16
+```{r}
+sal_vs_run = dbGetQuery(db, "SELECT Batting.yearID, Batting.playerID, HR, salary FROM Batting 
+                        INNER JOIN Salaries
+                        ON Batting.playerID = Salaries.playerID AND Batting.yearID = Salaries.yearID
+                        WHERE Batting.yearID BETWEEN 2010 AND 2013
+                        ORDER BY Batting.playerID")
+
+ggplot(data = na.omit(sal_vs_run), aes(x = HR, y = salary)) + geom_point(aes(col = yearID)) + geom_smooth()
+```
+
+17
+```{r}
+park = dbGetQuery(db, "SELECT yearID, park, SUM(HR) AS HR FROM Teams GROUP BY park")
+plot(park$HR)
+park[park$HR > 10000,]
+```
+
+
+20
+```{r}
+Start =  dbGetQuery(db, "SELECT yearID, SUM(G) AS StintGames
+                    FROM Pitching WHERE stint = 1
+                    GROUP BY yearID
+                    ORDER BY yearID")
+Game =  dbGetQuery(db, "SELECT yearID, SUM(G) AS Games
+                    FROM Pitching GROUP BY yearID
+                    ORDER BY yearID")
+S = data.frame(Year = Start$yearID, Games = Start$StintGames, Stint = rep("1", nrow(Start)))
+G = data.frame(Year = Game$yearID, Games = Game$Games, Stint = rep("all", nrow(Game)))
+ALL_DATA = rbind(S,G)
+ALL_DATA
+ggplot(data=ALL_DATA, aes(x=Year, y=Games, fill = Stint)) + geom_bar(stat="identity", position=position_dodge()) + scale_fill_brewer(palette="Paired") + scale_fill_manual(values=c('violet','royalblue4'))
